@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Suplemento Ideal – Controle de Estoque</title>
+<style>
+  :root { --bg:#f5f6f8; --card:#fff; --txt:#1c2330; --muted:#6b7485; --brand:#1f7a4d; --danger:#c0392b; --warn:#e67e22; --line:#e2e5ea; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg:#14181f; --card:#1d232d; --txt:#e8ebf0; --muted:#98a1b2; --brand:#2fb374; --danger:#e5604f; --warn:#f0a050; --line:#2c3441; }
+  }
+  * { box-sizing:border-box; }
+  body { margin:0; font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif; background:var(--bg); color:var(--txt); padding:16px; }
+  .wrap { max-width:960px; margin:0 auto; }
+  h1 { font-size:1.4rem; margin:0 0 4px; }
+  .sub { color:var(--muted); margin:0 0 16px; font-size:.9rem; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:16px; margin-bottom:16px; }
+  .grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(160px,1fr)); gap:10px; }
+  label { display:block; font-size:.8rem; color:var(--muted); margin-bottom:3px; }
+  input { width:100%; padding:9px; border:1px solid var(--line); border-radius:6px; background:var(--bg); color:var(--txt); font-size:.95rem; }
+  button { padding:9px 14px; border:0; border-radius:6px; background:var(--brand); color:#fff; font-size:.9rem; cursor:pointer; }
+  button.sec { background:transparent; color:var(--txt); border:1px solid var(--line); }
+  button.del { background:var(--danger); }
+  .row { display:flex; gap:8px; flex-wrap:wrap; margin-top:12px; align-items:center; }
+  .table-box { overflow-x:auto; }
+  table { width:100%; border-collapse:collapse; font-size:.9rem; }
+  th, td { text-align:left; padding:8px; border-bottom:1px solid var(--line); white-space:nowrap; }
+  th { color:var(--muted); font-weight:600; font-size:.8rem; }
+  .badge { padding:2px 8px; border-radius:20px; font-size:.75rem; color:#fff; background:var(--brand); }
+  .badge.low { background:var(--warn); }
+  .badge.zero { background:var(--danger); }
+  #msg { padding:10px; border-radius:6px; margin-bottom:12px; display:none; font-size:.9rem; }
+  #msg.err { display:block; background:#fdecea; color:#8a1f14; }
+  #msg.ok { display:block; background:#e6f5ec; color:#14532d; }
+  .hidden { display:none !important; }
+  .top { display:flex; justify-content:space-between; align-items:flex-start; gap:8px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="top">
+    <div>
+      <h1>Suplemento Ideal</h1>
+      <p class="sub">Controle de estoque</p>
+    </div>
+  </div>
+
+  <div id="msg"></div>
+
+  <!-- APLICAÇÃO -->
+  <div id="telaApp">
+    <div class="card">
+      <h2 id="tituloForm" style="margin-top:0;font-size:1.1rem">Novo produto</h2>
+      <input type="hidden" id="pid">
+      <div class="grid">
+        <div><label for="nome">Nome *</label><input id="nome" maxlength="120"></div>
+        <div><label for="categoria">Categoria</label><input id="categoria" maxlength="60" placeholder="Ex.: Proteína"></div>
+        <div><label for="marca">Marca</label><input id="marca" maxlength="60"></div>
+        <div><label for="modelo">Modelo</label><input id="modelo" maxlength="60" placeholder="Ex.: Pote 900 g"></div>
+        <div><label for="quantidade">Quantidade em estoque *</label><input id="quantidade" type="number" min="0" step="1" value="0"></div>
+        <div><label for="minimo">Alerta de estoque baixo (≤) *</label><input id="minimo" type="number" min="0" step="1" value="5"></div>
+      </div>
+      <div class="row">
+        <button id="btnSalvar">Salvar</button>
+        <button id="btnCancelar" class="sec hidden">Cancelar edição</button>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="row" style="margin-top:0">
+        <input id="busca" placeholder="Buscar por nome, categoria, marca ou modelo..." style="flex:1;min-width:200px">
+        <label style="display:flex;align-items:center;gap:6px;margin:0"><input id="soBaixo" type="checkbox" style="width:auto"> Só estoque baixo</label>
+      </div>
+      <div class="table-box" style="margin-top:12px">
+        <table>
+          <thead><tr><th>Nome</th><th>Categoria</th><th>Marca</th><th>Modelo</th><th>Qtd.</th><th>Situação</th><th></th></tr></thead>
+          <tbody id="lista"></tbody>
+        </table>
+      </div>
+      <p id="vazio" class="sub hidden" style="margin-top:12px">Nenhum produto encontrado.</p>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.js"></script>
+<script>
+/* ==========================================================
+   CONFIGURAÇÃO DO SUPABASE – preencha apenas estes 2 campos
+   (Supabase > Project Settings > API)
+   ========================================================== */
+const SUPABASE_URL      = "https://rqdherlokzqhnlxkjtvt.supabase.co";      // ex.: https://abcdxyz.supabase.co
+const SUPABASE_ANON_KEY = "sb_publishable_tm8FUAtf4FPn_Gq_SHsCOw_EuZlkuAK";  // chave "anon public"
+/* ATENÇÃO: NUNCA cole a chave "service_role" aqui. Ela dá acesso total ao banco. */
+/* ========================================================== */
+
+const $ = id => document.getElementById(id);
+let produtos = [];
+let sb = null;
+
+function aviso(texto, tipo) {
+  const m = $("msg");
+  m.textContent = texto;
+  m.className = tipo;
+  if (tipo === "ok") setTimeout(() => { m.className = ""; }, 3000);
+}
+function limparAviso() { $("msg").className = ""; }
+
+function iniciar() {
+  if (SUPABASE_URL.startsWith("COLE_") || SUPABASE_ANON_KEY.startsWith("COLE_")) {
+    aviso("Configure SUPABASE_URL e SUPABASE_ANON_KEY no início do script.", "err");
+    return;
+  }
+  sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+  carregar();
+}
+
+async function carregar() {
+  const { data, error } = await sb.from("produtos").select("*").order("nome");
+  if (error) return aviso("Erro ao carregar: " + error.message, "err");
+  produtos = data;
+  desenhar();
+}
+
+function situacao(p) {
+  if (p.quantidade === 0) return ["Sem estoque", "zero"];
+  if (p.quantidade <= p.estoque_minimo) return ["Estoque baixo", "low"];
+  return ["OK", ""];
+}
+
+function celula(tr, texto) {
+  const td = document.createElement("td");
+  td.textContent = texto || "";
+  tr.appendChild(td);
+  return td;
+}
+
+function desenhar() {
+  const termo = $("busca").value.toLowerCase();
+  const soBaixo = $("soBaixo").checked;
+  const corpo = $("lista");
+  corpo.replaceChildren();
+  const filtrados = produtos.filter(p => {
+    const texto = [p.nome, p.categoria, p.marca, p.modelo].join(" ").toLowerCase();
+    return texto.includes(termo) && (!soBaixo || p.quantidade <= p.estoque_minimo);
+  });
+  filtrados.forEach(p => {
+    const tr = document.createElement("tr");
+    celula(tr, p.nome); celula(tr, p.categoria); celula(tr, p.marca); celula(tr, p.modelo);
+    celula(tr, String(p.quantidade));
+    const [rotulo, cls] = situacao(p);
+    const tdS = document.createElement("td");
+    const b = document.createElement("span");
+    b.className = "badge " + cls; b.textContent = rotulo;
+    tdS.appendChild(b); tr.appendChild(tdS);
+    const tdA = document.createElement("td");
+    const be = document.createElement("button"); be.className = "sec"; be.textContent = "Editar";
+    be.onclick = () => editar(p);
+    const bd = document.createElement("button"); bd.className = "del"; bd.textContent = "Excluir"; bd.style.marginLeft = "6px";
+    bd.onclick = () => excluir(p);
+    tdA.append(be, bd); tr.appendChild(tdA);
+    corpo.appendChild(tr);
+  });
+  $("vazio").classList.toggle("hidden", filtrados.length > 0);
+}
+$("busca").oninput = desenhar;
+$("soBaixo").onchange = desenhar;
+
+function limparForm() {
+  ["pid", "nome", "categoria", "marca", "modelo"].forEach(i => $(i).value = "");
+  $("quantidade").value = 0; $("minimo").value = 5;
+  $("tituloForm").textContent = "Novo produto";
+  $("btnCancelar").classList.add("hidden");
+}
+function editar(p) {
+  $("pid").value = p.id; $("nome").value = p.nome; $("categoria").value = p.categoria || "";
+  $("marca").value = p.marca || ""; $("modelo").value = p.modelo || "";
+  $("quantidade").value = p.quantidade; $("minimo").value = p.estoque_minimo;
+  $("tituloForm").textContent = "Editando produto";
+  $("btnCancelar").classList.remove("hidden");
+  window.scrollTo({ top: 0, behavior: "smooth" });
+}
+$("btnCancelar").onclick = limparForm;
+
+$("btnSalvar").onclick = async () => {
+  limparAviso();
+  const dados = {
+    nome: $("nome").value.trim(),
+    categoria: $("categoria").value.trim() || null,
+    marca: $("marca").value.trim() || null,
+    modelo: $("modelo").value.trim() || null,
+    quantidade: parseInt($("quantidade").value, 10),
+    estoque_minimo: parseInt($("minimo").value, 10)
+  };
+  if (!dados.nome) return aviso("Informe o nome do produto.", "err");
+  if (!Number.isInteger(dados.quantidade) || dados.quantidade < 0 || !Number.isInteger(dados.estoque_minimo) || dados.estoque_minimo < 0)
+    return aviso("Quantidade e alerta devem ser números inteiros, zero ou maiores.", "err");
+  const id = $("pid").value;
+  const { error } = id
+    ? await sb.from("produtos").update(dados).eq("id", id)
+    : await sb.from("produtos").insert(dados);
+  if (error) return aviso("Erro ao salvar: " + error.message, "err");
+  aviso(id ? "Produto atualizado." : "Produto cadastrado.", "ok");
+  limparForm();
+  carregar();
+};
+
+async function excluir(p) {
+  if (!confirm('Excluir "' + p.nome + '"? Essa ação não pode ser desfeita.')) return;
+  const { error } = await sb.from("produtos").delete().eq("id", p.id);
+  if (error) return aviso("Erro ao excluir: " + error.message, "err");
+  aviso("Produto excluído.", "ok");
+  carregar();
+}
+
+iniciar();
+</script>
+</body>
+</html>
+
